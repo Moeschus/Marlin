@@ -57,6 +57,7 @@
 #define X_STOP_PIN                          PC0   // X-STOP
 #define Y_STOP_PIN                          PC1   // Y-STOP
 #define Z_STOP_PIN                          PC2   // Z-STOP
+#define E0_DIAG_PIN                         PC15  // E0-STOP
 
 //
 // Z Probe must be this pin
@@ -96,9 +97,9 @@
 #define Z_STEP_PIN                          PB0
 #define Z_DIR_PIN                           PC5
 
-#define E0_ENABLE_PIN                       PD1
-#define E0_STEP_PIN                         PB3
-#define E0_DIR_PIN                          PB4
+#define Y2_ENABLE_PIN                       PD1
+#define Y2_STEP_PIN                         PB3
+#define Y2_DIR_PIN                          PB4
 
 #if HAS_TMC_UART
   /**
@@ -108,7 +109,7 @@
   #define X_HARDWARE_SERIAL  MSerial4
   #define Y_HARDWARE_SERIAL  MSerial4
   #define Z_HARDWARE_SERIAL  MSerial4
-  #define E0_HARDWARE_SERIAL MSerial4
+  #define Y2_HARDWARE_SERIAL MSerial4
 
   // Default TMC slave addresses
   #ifndef X_SLAVE_ADDRESS
@@ -120,8 +121,8 @@
   #ifndef Z_SLAVE_ADDRESS
     #define Z_SLAVE_ADDRESS  1
   #endif
-  #ifndef E0_SLAVE_ADDRESS
-    #define E0_SLAVE_ADDRESS 3
+  #ifndef Y2_SLAVE_ADDRESS
+    #define Y2_SLAVE_ADDRESS 3
   #endif
 #endif
 
@@ -436,6 +437,15 @@
 //
 // Default NEOPIXEL_PIN
 //
-#ifndef NEOPIXEL_PIN
-  #define NEOPIXEL_PIN                      PA8   // LED driving pin
-#endif
+//#ifndef NEOPIXEL_PIN
+//  #define NEOPIXEL_PIN                      PA8   // LED driving pin
+//#endif
+
+#if HAS_CUTTER
+  #ifndef SPINDLE_LASER_PWM_PIN
+    #define SPINDLE_LASER_PWM_PIN           PA8
+  #endif
+//  #ifndef SPINDLE_LASER_ENA_PIN
+//    #define SPINDLE_LASER_ENA_PIN           PB6
+//  #endif
+#endif // SPINDLE_FEATURE || LASER_FEATURE
