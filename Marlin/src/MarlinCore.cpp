@@ -425,7 +425,7 @@ inline void manage_inactivity(const bool no_stepper_sleep=false) {
     kill();
   }
 
-  const bool has_blocks = planner.has_blocks_queued();  // Any moves in the planner?
+  const bool has_blocks = planner.has_blocks_queued() || TERN0(REALTIME_REPORTING_COMMANDS, stepper.paused);  // Any moves in the planner?
   if (has_blocks) gcode.reset_stepper_timeout(ms);      // Reset timeout for M18/M84, M85 max 'kill', and laser.
 
   // M18 / M84 : Handle steppers inactive time timeout

@@ -1882,8 +1882,13 @@ void Temperature::task() {
       if (emergency_parser.sd_abort_by_M524) { // abort SD print immediately
         emergency_parser.sd_abort_by_M524 = false;
         card.flag.abort_sd_printing = true;
+        quickstop_stepper();
         gcode.process_subcommands_now(F("M524"));
       }
+    #endif
+
+    #if ENABLED(REALTIME_REPORTING_COMMANDS)
+      pause_motion_task();
     #endif
   #endif
 

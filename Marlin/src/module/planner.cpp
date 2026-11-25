@@ -1683,7 +1683,9 @@ void Planner::quick_stop() {
   // must be handled: The tail could change between the read and the assignment
   // so this must be enclosed in a critical section
 
-  const bool was_enabled = stepper.suspend();
+  const bool was_paused = TERN0(REALTIME_REPORTING_COMMANDS, stepper.paused);
+  TERN_(REALTIME_REPORTING_COMMANDS, stepper.paused = false);
+  const bool was_enabled = stepper.suspend() || was_paused;
 
   // Drop all queue entries
   block_buffer_nonbusy = block_buffer_planned = block_buffer_head = block_buffer_tail;
@@ -1697,11 +1699,11 @@ void Planner::quick_stop() {
   // Make sure to drop any attempt of queuing moves for 1 second
   cleaning_buffer_counter = TEMP_TIMER_FREQUENCY;
 
+  // Stop the stepper ISR and discard current_block while ISR is still suspended
+  stepper.quick_stop();
+
   // Reenable Stepper ISR
   if (was_enabled) stepper.wake_up();
-
-  // And stop the stepper ISR
-  stepper.quick_stop();
 }
 
 #if ENABLED(REALTIME_REPORTING_COMMANDS)
@@ -1709,6 +1711,7 @@ void Planner::quick_stop() {
   void Planner::quick_pause() {
     // Suspend until quick_resume is called
     // Don't empty buffers or queues
+    stepper.paused = true;
     const bool did_suspend = stepper.suspend();
     if (did_suspend)
       TERN_(FULL_REPORT_TO_HOST_FEATURE, set_and_report_grblstate(M_HOLD));
@@ -1716,6 +1719,7 @@ void Planner::quick_stop() {
 
   // Resume if suspended
   void Planner::quick_resume() {
+    stepper.paused = false;
     TERN_(FULL_REPORT_TO_HOST_FEATURE, set_and_report_grblstate(grbl_state_for_marlin_state()));
     stepper.wake_up();
   }
@@ -1733,14 +1737,14 @@ float Planner::triggered_position_mm(const AxisEnum axis) {
 }
 
 bool Planner::busy() {
-  return (has_blocks_queued() || cleaning_buffer_counter
+  return (has_blocks_queued()
       || TERN0(EXTERNAL_CLOSED_LOOP_CONTROLLER, CLOSED_LOOP_WAITING())
       || TERN0(HAS_ZV_SHAPING, stepper.input_shaping_busy())
   );
 }
 
 void Planner::finish_and_disable() {
-  while (has_blocks_queued() || cleaning_buffer_counter) idle();
+  while (has_blocks_queued()) idle();
   stepper.disable_all_steppers();
 }
 
@@ -2958,6 +2962,8 @@ void Planner::buffer_sync_block(const BlockFlagBit sync_flag/*=BLOCK_BIT_SYNC_PO
   // Wait for the next available block
   uint8_t next_buffer_head;
   block_t * const block = get_next_free_block(next_buffer_head);
+
+  if (cleaning_buffer_counter) return;
 
   // Clear block
   block->reset();

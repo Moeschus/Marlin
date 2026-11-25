@@ -711,6 +711,14 @@ void CardReader::openFileRead(const char * const path, const uint8_t subcall_typ
     openFailed(fname);
 }
 
+bool CardReader::openFileReadSilent(MediaFile &outFile, const char * const path) {
+  if (!isMounted()) return false;
+  MediaFile *diveDir;
+  const char * const fname = diveToFile(true, diveDir, path);
+  if (!fname) return false;
+  return outFile.open(diveDir, fname, O_READ);
+}
+
 inline void echo_write_to_file(const char * const fname) {
   SERIAL_ECHOLNPGM(STR_SD_WRITE_TO_FILE, fname);
 }

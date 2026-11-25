@@ -675,6 +675,7 @@ private:
     #if ALL(SDCARD_SORT_ALPHA, SDSORT_GCODE)
       static void M34();
     #endif
+    static void M37();
   #endif
 
   #if ENABLED(DIRECT_PIN_CONTROL)

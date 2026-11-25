@@ -39,6 +39,10 @@ extern bool wait_for_user, wait_for_heatup;
   void report_current_position_moving();
   void quickpause_stepper();
   void quickresume_stepper();
+  void pause_z_lift_up();
+  void pause_z_lift_down();
+  void pause_spindle_off();
+  void pause_spindle_on();
 #endif
 
 #if ENABLED(SOFT_RESET_VIA_SERIAL)
@@ -68,6 +72,10 @@ public:
       EP_S, EP_S0, EP_S00, EP_GRBL_STATUS,
       EP_R, EP_R0, EP_R00, EP_GRBL_RESUME,
       EP_P, EP_P0, EP_P00, EP_GRBL_PAUSE,
+      EP_U, EP_U0, EP_U00, EP_PAUSE_Z_UP,
+      EP_D, EP_D0, EP_D00, EP_PAUSE_Z_DOWN,
+      EP_O, EP_O0, EP_O00, EP_SPINDLE_OFF,
+      EP_I, EP_I0, EP_I00, EP_SPINDLE_ON,
     #endif
     #if ENABLED(SOFT_RESET_VIA_SERIAL)
       EP_ctrl,
@@ -103,6 +111,10 @@ public:
             case 'S': state = EP_S; break;
             case 'P': state = EP_P; break;
             case 'R': state = EP_R; break;
+            case 'U': state = EP_U; break;
+            case 'D': state = EP_D; break;
+            case 'O': state = EP_O; break;
+            case 'I': state = EP_I; break;
           #endif
           #if ENABLED(SOFT_RESET_VIA_SERIAL)
             case '^': state = EP_ctrl; break;
@@ -121,6 +133,10 @@ public:
             case 'S': state = EP_S; break;
             case 'P': state = EP_P; break;
             case 'R': state = EP_R; break;
+            case 'U': state = EP_U; break;
+            case 'D': state = EP_D; break;
+            case 'O': state = EP_O; break;
+            case 'I': state = EP_I; break;
           #endif
           default: state = EP_IGNORE;
         }
@@ -138,6 +154,22 @@ public:
         case EP_P:   state = (c == '0') ? EP_P0          : EP_IGNORE; break;
         case EP_P0:  state = (c == '0') ? EP_P00         : EP_IGNORE; break;
         case EP_P00: state = (c == '0') ? EP_GRBL_PAUSE  : EP_IGNORE; break;
+
+        case EP_U:   state = (c == '0') ? EP_U0           : EP_IGNORE; break;
+        case EP_U0:  state = (c == '0') ? EP_U00          : EP_IGNORE; break;
+        case EP_U00: state = (c == '0') ? EP_PAUSE_Z_UP   : EP_IGNORE; break;
+
+        case EP_D:   state = (c == '0') ? EP_D0           : EP_IGNORE; break;
+        case EP_D0:  state = (c == '0') ? EP_D00          : EP_IGNORE; break;
+        case EP_D00: state = (c == '0') ? EP_PAUSE_Z_DOWN : EP_IGNORE; break;
+
+        case EP_O:   state = (c == '0') ? EP_O0           : EP_IGNORE; break;
+        case EP_O0:  state = (c == '0') ? EP_O00          : EP_IGNORE; break;
+        case EP_O00: state = (c == '0') ? EP_SPINDLE_OFF  : EP_IGNORE; break;
+
+        case EP_I:   state = (c == '0') ? EP_I0           : EP_IGNORE; break;
+        case EP_I0:  state = (c == '0') ? EP_I00          : EP_IGNORE; break;
+        case EP_I00: state = (c == '0') ? EP_SPINDLE_ON   : EP_IGNORE; break;
       #endif
 
       #if ENABLED(SOFT_RESET_VIA_SERIAL)
@@ -214,7 +246,10 @@ public:
           if (enabled) switch (state) {
             case EP_M108: wait_for_user = wait_for_heatup = false; break;
             case EP_M112: killed_by_M112 = true; break;
-            case EP_M410: quickstop_by_M410 = true; break;
+            case EP_M410:
+              quickstop_by_M410 = true;
+              TERN_(REALTIME_REPORTING_COMMANDS, quickpause_stepper());
+              break;
             #if HAS_MEDIA
               case EP_M524: sd_abort_by_M524 = true; break;
             #endif
@@ -225,6 +260,10 @@ public:
               case EP_GRBL_STATUS: report_current_position_moving(); break;
               case EP_GRBL_PAUSE: quickpause_stepper(); break;
               case EP_GRBL_RESUME: quickresume_stepper(); break;
+              case EP_PAUSE_Z_UP: pause_z_lift_up(); break;
+              case EP_PAUSE_Z_DOWN: pause_z_lift_down(); break;
+              case EP_SPINDLE_OFF: pause_spindle_off(); break;
+              case EP_SPINDLE_ON: pause_spindle_on(); break;
             #endif
             #if ENABLED(SOFT_RESET_VIA_SERIAL)
               case EP_KILL: HAL_reboot(); break;

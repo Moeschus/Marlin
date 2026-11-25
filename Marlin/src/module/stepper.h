@@ -512,6 +512,10 @@ class Stepper {
       static bool frozen;                   // Set this flag to instantly freeze motion
     #endif
 
+    #if ENABLED(REALTIME_REPORTING_COMMANDS)
+      static bool paused;                 // Keep steppers suspended until quick_resume()
+    #endif
+
   private:
 
     static block_t* current_block;          // A pointer to the block currently being traced
@@ -623,7 +627,10 @@ class Stepper {
 
     // The stepper subsystem goes to sleep when it runs out of things to execute.
     // Call this to notify the subsystem that it is time to go to work.
-    static void wake_up() { ENABLE_STEPPER_DRIVER_INTERRUPT(); }
+    static void wake_up() {
+      if (!TERN0(REALTIME_REPORTING_COMMANDS, paused))
+        ENABLE_STEPPER_DRIVER_INTERRUPT();
+    }
 
     static bool is_awake() { return STEPPER_ISR_ENABLED(); }
 
@@ -701,8 +708,29 @@ class Stepper {
       TERN_(LIN_ADVANCE, la_interval = nextAdvanceISR = LA_ADV_NEVER);
     }
 
+    FORCE_INLINE static void purge_shaping() {
+      #if HAS_ZV_SHAPING
+        ShapingQueue::purge();
+        #if ENABLED(INPUT_SHAPING_X)
+          shaping_x.delta_error = 0;
+          shaping_x.last_block_end_pos = count_position.x;
+        #endif
+        #if ENABLED(INPUT_SHAPING_Y)
+          shaping_y.delta_error = 0;
+          shaping_y.last_block_end_pos = count_position.y;
+        #endif
+      #endif
+    }
+
     // Quickly stop all steppers
-    FORCE_INLINE static void quick_stop() { abort_current_block = true; }
+    FORCE_INLINE static void quick_stop() {
+      abort_current_block = true;
+      if (!is_awake()) {
+        if (current_block) discard_current_block();
+        purge_shaping();
+        abort_current_block = false;
+      }
+    }
 
     // The direction of a single motor
     FORCE_INLINE static bool motor_direction(const AxisEnum axis) { return TEST(last_direction_bits, axis); }
@@ -761,6 +789,12 @@ class Stepper {
 
     #if ENABLED(BABYSTEPPING)
       static void do_babystep(const AxisEnum axis, const bool direction); // perform a short step with a single stepper motor, outside of any convention
+      #if ENABLED(REALTIME_REPORTING_COMMANDS)
+        static void pause_step_z(const bool up) {
+          do_babystep(Z_AXIS, up);
+          count_position.z += (up ? 1 : -1);
+        }
+      #endif
     #endif
 
     #if HAS_MOTOR_CURRENT_PWM

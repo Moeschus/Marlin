@@ -195,6 +195,10 @@ uint8_t Stepper::steps_per_isr;
   bool Stepper::frozen; // = false
 #endif
 
+#if ENABLED(REALTIME_REPORTING_COMMANDS)
+  bool Stepper::paused; // = false
+#endif
+
 IF_DISABLED(ADAPTIVE_STEP_SMOOTHING, constexpr) uint8_t Stepper::oversampling_factor;
 
 xyze_long_t Stepper::delta_error{0};
@@ -1622,20 +1626,8 @@ void Stepper::pulse_phase_isr() {
   // If we must abort the current block, do so!
   if (abort_current_block) {
     abort_current_block = false;
-    if (current_block) {
-      discard_current_block();
-      #if HAS_ZV_SHAPING
-        ShapingQueue::purge();
-        #if ENABLED(INPUT_SHAPING_X)
-          shaping_x.delta_error = 0;
-          shaping_x.last_block_end_pos = count_position.x;
-        #endif
-        #if ENABLED(INPUT_SHAPING_Y)
-          shaping_y.delta_error = 0;
-          shaping_y.last_block_end_pos = count_position.y;
-        #endif
-      #endif
-    }
+    if (current_block) discard_current_block();
+    purge_shaping();
   }
 
   // If there is no current block, do nothing

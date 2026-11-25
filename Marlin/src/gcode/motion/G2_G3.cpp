@@ -389,9 +389,8 @@ void plan_arc(
 
   hints.curve_radius = 0;
   hints.safe_exit_speed_sqr = 0.0f;
-  planner.buffer_line(raw, scaled_fr_mm_s, active_extruder, hints);
-
-  current_position = cart;
+  if (planner.buffer_line(raw, scaled_fr_mm_s, active_extruder, hints))
+    current_position = cart;
 
 } // plan_arc
 

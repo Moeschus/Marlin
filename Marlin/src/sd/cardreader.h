@@ -138,6 +138,7 @@ public:
 
   // Basic file ops
   static void openFileRead(const char * const path, const uint8_t subcall=0);
+  static bool openFileReadSilent(MediaFile &outFile, const char * const path);
   static void openFileWrite(const char * const path);
   static void closefile(const bool store_location=false);
   static bool fileExists(const char * const name);

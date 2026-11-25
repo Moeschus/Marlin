@@ -470,6 +470,20 @@ void GCodeQueue::get_serial_commands() {
         char* command = serial.line_buffer;
 
         while (*command == ' ') command++;                   // Skip leading spaces
+
+        #if ENABLED(EMERGENCY_PARSER)
+          // Out-of-band emergency / realtime commands (P000, R000, S000, M410) are already
+          // handled on arrival in the serial RX ISR; drop them here so they neither consume
+          // ring_buffer slots nor emit extra "ok" responses that desynchronize host tx_slots.
+          if (
+            #if ENABLED(REALTIME_REPORTING_COMMANDS)
+              ((command[0] == 'P' || command[0] == 'R' || command[0] == 'S' ||
+                command[0] == 'U' || command[0] == 'D' || command[0] == 'O' || command[0] == 'I')
+                && command[1] == '0' && command[2] == '0' && command[3] == '0' && command[4] == '\0') ||
+            #endif
+            (command[0] == 'M' && command[1] == '4' && command[2] == '1' && command[3] == '0' && command[4] == '\0')
+          ) continue;
+        #endif
         char *npos = (*command == 'N') ? command : nullptr;  // Require the N parameter to start the line
 
         if (npos) {

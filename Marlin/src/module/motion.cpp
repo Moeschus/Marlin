@@ -66,6 +66,16 @@
   #include "../feature/babystep.h"
 #endif
 
+#if HAS_CUTTER
+  #include "../feature/spindle_laser.h"
+#endif
+
+#if ENABLED(EMERGENCY_PARSER)
+  #include "../feature/e_parser.h"
+#endif
+
+#include "../HAL/shared/Delay.h"
+
 #define DEBUG_OUT ENABLED(DEBUG_LEVELING_FEATURE)
 #include "../core/debug_out.h"
 
@@ -379,23 +389,158 @@ void home_if_needed(const bool keeplev/*=false*/) {
  * Run out the planner buffer and re-sync the current
  * position from the last-updated stepper positions.
  */
+#if ENABLED(REALTIME_REPORTING_COMMANDS)
+  static volatile int32_t pause_z_lift_steps = 0;
+  static volatile int32_t pause_z_target_steps = 0;
+  static volatile bool pause_resume_pending = false;
+  static volatile int8_t pause_spindle_req = 0; // -1 = off, +1 = on
+  static bool pause_spindle_is_off = false;
+  static uint8_t pause_saved_cutter_power = 0;
+  static millis_t pause_spindle_wait_until_ms = 0;
+#endif
+
 void quickstop_stepper() {
+  #if ENABLED(REALTIME_REPORTING_COMMANDS)
+    pause_z_lift_steps = 0;
+    pause_z_target_steps = 0;
+    pause_resume_pending = false;
+    pause_spindle_req = 0;
+    pause_spindle_is_off = false;
+    pause_spindle_wait_until_ms = 0;
+  #endif
   planner.quick_stop();
-  planner.synchronize();
   set_current_from_steppers_for_axis(ALL_AXES_ENUM);
   sync_plan_position();
+  planner.cleaning_buffer_counter = TEMP_TIMER_FREQUENCY;
 }
 
 #if ENABLED(REALTIME_REPORTING_COMMANDS)
 
   void quickpause_stepper() {
+    pause_resume_pending = false;
+    pause_z_target_steps = pause_z_lift_steps;
+    pause_spindle_wait_until_ms = 0;
     planner.quick_pause();
-    //planner.synchronize();
   }
 
   void quickresume_stepper() {
-    planner.quick_resume();
-    //planner.synchronize();
+    if (!stepper.paused) return;
+    if (pause_z_lift_steps == 0 && pause_z_target_steps == 0 && !pause_spindle_is_off && pause_spindle_req == 0) {
+      planner.quick_resume();
+    }
+    else {
+      pause_z_target_steps = 0;
+      pause_resume_pending = true;
+    }
+  }
+
+  void pause_z_lift_up() {
+    #if ENABLED(BABYSTEPPING) && HAS_Z_AXIS
+      if (!stepper.paused || pause_resume_pending) return;
+      const int32_t delta = LROUND(10.0f * planner.settings.axis_steps_per_mm[Z_AXIS]);
+      int32_t next_target = pause_z_target_steps + delta;
+      #ifdef Z_MAX_POS
+        if (TEST(axes_trusted, Z_AXIS)) {
+          const int32_t max_z_steps = LROUND((Z_MAX_POS) * planner.settings.axis_steps_per_mm[Z_AXIS]);
+          const int32_t base_z_steps = stepper.position(Z_AXIS) - pause_z_lift_steps;
+          const int32_t max_lift = _MAX(int32_t(0), max_z_steps - base_z_steps);
+          if (next_target > max_lift) next_target = max_lift;
+        }
+      #endif
+      pause_z_target_steps = next_target;
+    #endif
+  }
+
+  void pause_z_lift_down() {
+    #if ENABLED(BABYSTEPPING) && HAS_Z_AXIS
+      if (!stepper.paused || pause_resume_pending) return;
+      const int32_t delta = LROUND(10.0f * planner.settings.axis_steps_per_mm[Z_AXIS]);
+      int32_t next_target = pause_z_target_steps - delta;
+      if (next_target < 0) next_target = 0;
+      pause_z_target_steps = next_target;
+    #endif
+  }
+
+  void pause_spindle_off() {
+    pause_spindle_req = -1;
+  }
+
+  void pause_spindle_on() {
+    pause_spindle_req = 1;
+  }
+
+  void pause_motion_task() {
+    #if HAS_CUTTER
+      const int8_t sp_req = pause_spindle_req;
+      if (sp_req != 0) {
+        pause_spindle_req = 0;
+        if (sp_req < 0) {
+          if (!pause_spindle_is_off) {
+            pause_saved_cutter_power = cutter.power ?: cutter.last_power_applied;
+            if (!pause_saved_cutter_power && cutter.enabled()) pause_saved_cutter_power = 255;
+            pause_spindle_is_off = true;
+          }
+          cutter.set_enabled(false);
+          cutter.apply_power(0);
+        }
+        else {
+          const uint8_t pwr = pause_saved_cutter_power ?: (cutter.power ?: 255);
+          cutter.power = pwr;
+          cutter.set_enabled(true);
+          cutter.apply_power(pwr);
+          pause_spindle_is_off = false;
+        }
+      }
+
+      if (pause_resume_pending) {
+        if (pause_spindle_is_off) {
+          const uint8_t pwr = pause_saved_cutter_power ?: (cutter.power ?: 255);
+          cutter.power = pwr;
+          cutter.set_enabled(true);
+          cutter.apply_power(pwr);
+          pause_spindle_is_off = false;
+          pause_spindle_wait_until_ms = millis() + 2000UL;
+          return;
+        }
+        if (pause_spindle_wait_until_ms) {
+          if (PENDING(millis(), pause_spindle_wait_until_ms)) return;
+          pause_spindle_wait_until_ms = 0;
+        }
+      }
+    #endif
+
+    #if ENABLED(BABYSTEPPING) && HAS_Z_AXIS
+      if (stepper.paused && pause_z_lift_steps != pause_z_target_steps) {
+        const float spmm = planner.settings.axis_steps_per_mm[Z_AXIS];
+        const bool going_up = (pause_z_target_steps > pause_z_lift_steps);
+        const float target_mm_s = going_up ? 5.0f : 2.5f;
+        const uint32_t base_us = constrain(uint32_t(1000000.0f / (spmm * target_mm_s)), 150UL, 4000UL);
+        const millis_t chunk_end_ms = millis() + 20UL;
+
+        while (stepper.paused && pause_z_lift_steps != pause_z_target_steps) {
+          #if ENABLED(EMERGENCY_PARSER)
+            if (emergency_parser.quickstop_by_M410) return;
+          #endif
+          const bool up = (pause_z_target_steps > pause_z_lift_steps);
+          const int32_t rem = ABS(pause_z_target_steps - pause_z_lift_steps);
+          uint32_t step_us = base_us;
+          if (rem < 200)
+            step_us = base_us + (base_us * uint32_t(200 - rem)) / 200UL;
+
+          stepper.pause_step_z(up);
+          pause_z_lift_steps += (up ? 1 : -1);
+          DELAY_US(step_us);
+
+          if (ELAPSED(millis(), chunk_end_ms)) break;
+        }
+        return;
+      }
+    #endif
+
+    if (pause_resume_pending && stepper.paused && pause_z_lift_steps == 0 && pause_z_target_steps == 0 && !pause_spindle_is_off && pause_spindle_wait_until_ms == 0) {
+      pause_resume_pending = false;
+      planner.quick_resume();
+    }
   }
 
 #endif
@@ -1259,8 +1404,7 @@ FORCE_INLINE void segment_idle(millis_t &next_idle_ms) {
       }
     #endif // HAS_MESH
 
-    planner.buffer_line(destination, scaled_fr_mm_s);
-    return false; // caller will update current_position
+    return !planner.buffer_line(destination, scaled_fr_mm_s); // caller will update current_position only if queued
   }
 
 #endif // !IS_KINEMATIC

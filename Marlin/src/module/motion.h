@@ -259,7 +259,9 @@ void report_current_position_projected();
 
 #if ENABLED(AUTO_REPORT_POSITION)
   #include "../libs/autoreport.h"
-  struct PositionReport { static void report() { report_current_position_projected(); } };
+  struct PositionReport { static void report() {
+    TERN(AUTO_REPORT_REAL_POSITION, report_real_position(), report_current_position_projected());
+  } };
   extern AutoReporter<PositionReport> position_auto_reporter;
 #endif
 
@@ -299,6 +301,11 @@ void report_current_position_projected();
   #if ENABLED(REALTIME_REPORTING_COMMANDS)
     void quickpause_stepper();
     void quickresume_stepper();
+    void pause_z_lift_up();
+    void pause_z_lift_down();
+    void pause_spindle_off();
+    void pause_spindle_on();
+    void pause_motion_task();
   #endif
 #endif
 

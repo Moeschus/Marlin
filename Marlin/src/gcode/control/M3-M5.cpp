@@ -140,6 +140,7 @@ void GcodeSuite::M3_M4(const bool is_M4) {
  *  M5 - Spindle OFF
  */
 void GcodeSuite::M5() {
+  planner.cleaning_buffer_counter = 0;
   planner.synchronize();
   cutter.power = 0;
   cutter.apply_power(0);                          // M5 just kills power, leaving inline mode unchanged
